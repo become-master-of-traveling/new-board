@@ -47,14 +47,14 @@ app.get('/api/notes', async (req, res) => {
 
 app.post('/api/notes', async (req, res) => {
   try {
-    console.log('收到的 body:', req.body); // ⭐ 看這裡就知道有沒有收到前端送來的資料
+    console.log('收到的 body:', req.body);
 
     const { author, content, color } = req.body;
     if (!content) {
       return res.status(400).json({ error: 'content 為必填' });
     }
 
-    const note = await Note.create({ author, content, color }); // ⭐ 寫進 MongoDB 的地方
+    const note = await Note.create({ author, content, color });
     res.status(201).json(note);
   } catch (err) {
     console.error('新增留言錯誤：', err);
