@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8" />
+    <title>旅遊留言牆 Sticky Notes Wall</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 首頁選單 -->
+<div id="menu" class="menu">
+    <h1>旅遊留言牆</h1>
+    <button onclick="showWall()">查看留言牆</button>
+    <button onclick="showInput()">我要留言</button>
+</div>
+
+<!-- 留言輸入區 -->
+<div id="inputPage" class="hidden">
+    <h1 class="title">我要留言</h1>
+    <button class="back" onclick="showMenu()">返回選單</button>
+    <button class="wallPage" onclick="showWall()">留言牆</button>
+
+    <div class="input-box">
+        <input id="name" type="text" placeholder="你的名字（例如：Amy、Huixin、Chiu）" />
+        <textarea id="content" placeholder="想說些什麼呢？" rows="3"></textarea>
+        <button onclick="addMessage()">送出留言</button>
+    </div>
+</div>
+
+<!-- 留言牆 -->
+<div id="wallPage" class="hidden">
+    <h1 class="title">留言牆</h1>
+    <button class="back" onclick="showMenu()">返回選單</button>
+    <button class="inputPage" onclick="showInput()">留言區</button>
+
+    <div id="messages"></div>
+</div>
+
+
+<script>
+const API_BASE = "http://localhost:3000";
+
+// --------------------- 切換頁面 ----------------------
+
+function showMenu() {
+  document.getElementById("menu").classList.remove("hidden");
+  document.getElementById("inputPage").classList.add("hidden");
+  document.getElementById("wallPage").classList.add("hidden");
+}
+
+function showInput() {
+  document.getElementById("menu").classList.add("hidden");
+  document.getElementById("inputPage").classList.remove("hidden");
+  document.getElementById("wallPage").classList.add("hidden");
+}
+
+// 打開留言牆 → 從 DB 載入
+function showWall() {
+  document.getElementById("menu").classList.add("hidden");
+  document.getElementById("inputPage").classList.add("hidden");
+  document.getElementById("wallPage").classList.remove("hidden");
+  loadMessagesFromDB();
+}
+
+// --------------------- 主資料：來自後端 ----------------------
+
+let messages = [];
+
+// 從後端載入全部留言
+async function loadMessagesFromDB() {
+  try {
+    const res = await fetch(`${API_BASE}/api/notes`);
+    const data = await res.json();
+
+    // 將後端格式轉成前端便利貼格式
+    messages = data.map(note => ({
+      id: note._id,                     
+      name: note.author || "匿名",
+      content: note.content,
+      time: new Date(note.createdAt).toLocaleString(),
+      likes: 0,     
+      replies: []  
+    }));
+
+    render();
+  } catch (err) {
+    console.error("載入留言失敗：", err);
+    alert("無法載入留言，請稍後再試");
+  }
+}
+
+// --------------------- 新增留言（POST API） ----------------------
+
+async function addMessage() {
+  const name = document.getElementById("name").value.trim();
+  const content = document.getElementById("content").value.trim();
+
+  if (!name || !content) {
+    alert("請輸入名字與留言內容！");
+    return;
+  }
+
+  try {
+    // 將留言送到 MongoDB
+    const res = await fetch(`${API_BASE}/api/notes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        author: name,
+        content: content,
+      }),
+    });
+
+    if (!res.ok) {
+      alert("留言送出失敗，請稍後再試");
+      return;
+    }
+
+    // 送出成功後，重新取得最新留言
+    await loadMessagesFromDB();
+
+    // 清空輸入框
+    document.getElementById("content").value = "";
+
+    alert("留言成功！");
+
+  } catch (err) {
+    console.error("新增留言錯誤：", err);
+    alert("無法送出留言");
+  }
+}
+
+// --------------------- 便利貼畫面渲染 ----------------------
+
+function render() {
+  const box = document.getElementById("messages");
+  box.innerHTML = "";
+
+  const colors = ["var(--sticky1)", "var(--sticky2)", "var(--sticky3)", "var(--sticky4)", "var(--sticky5)"];
+
+  messages.forEach((msg, i) => {
+    const bg = colors[Math.floor(Math.random() * colors.length)];
+    const rotate = Math.floor(Math.random() * 11) - 5;
+
+    box.innerHTML += `
+      <div class="message" style="background:${bg}; --rotate:${rotate}">
+          <strong>${msg.name}</strong>
+          <div class="time">${msg.time}</div>
+          <div class="content">${msg.content}</div>
+
+          <div class="actions">
+            <span class="like" onclick="likeMessage(${i})">❤️ ${msg.likes}</span>
+            <span class="reply-btn" onclick="addReply(${i})">💭 回覆</span>
+            <span class="delete-btn" onclick="deleteMessage(${i})">🗑️ 刪除</span>
+          </div>
+
+          ${msg.replies.map(r => `<div class="reply-box">💬 ${r}</div>`).join("")}
+      </div>
+    `;
+  });
+}
+
+// --------------------- 讚、刪除、回覆（先留在前端） ----------------------
+
+function likeMessage(index) {
+  messages[index].likes++;
+  render();
+}
+
+async function deleteMessage(index) {
+  const msg = messages[index];
+  if (!msg || !msg.id) {
+    alert("找不到這則留言的 id，無法刪除");
+    return;
+  }
+
+  if (!confirm("確定要刪除這則留言嗎？")) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/notes/${msg.id}`, {
+      method: "DELETE",
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      console.error("刪除失敗：", errData);
+      alert("刪除失敗，請稍後再試");
+      return;
+    }
+
+    // 本地陣列同步刪除
+    messages.splice(index, 1);
+    render();
+  } catch (err) {
+    console.error("刪除留言時發生錯誤：", err);
+    alert("刪除留言失敗，請稍後再試");
+  }
+}
+
+function addReply(index) {
+  const reply = prompt("輸入回覆內容：");
+  if (reply) {
+    messages[index].replies.push(reply);
+    render();
+  }
+}
+
+</script>
